@@ -63,6 +63,15 @@ if ($clean -and (Test-Path -Path $appPath)) {
 	Remove-Item -Path $appPath -Force -Recurse
 }
 
+# prepare additional launcher
+$debugProps = Get-Content -Path $buildDir\resources\debug-launcher.properties
+$debugProps = $debugProps -replace '\${SEM_VER_STR}', "$semVerNo"
+$debugProps = $debugProps -replace '\${REVISION_NUM}', "$revisionNo"
+$debugProps = $debugProps -replace '\${APP_NAME}', "$AppName"
+$debugProps = $debugProps -replace '\${LOOPBACK_ALIAS}', "$LoopbackAlias"
+Set-Content -Path $buildDir\resources\${AppName}Debug.properties -Value $debugProps
+
+
 # create app dir
 & "$Env:JAVA_HOME\bin\jpackage" `
 	--verbose `
@@ -94,7 +103,8 @@ if ($clean -and (Test-Path -Path $appPath)) {
 	--java-options "-Dcryptomator.showTrayIcon=true" `
 	--java-options "-Dcryptomator.buildNumber=`"msi-$revisionNo`"" `
 	--resource-dir resources `
-	--icon resources/$AppName.ico
+	--icon resources/$AppName.ico `
+	--add-launcher "${AppName}Debug=$buildDir\resources\${AppName}Debug.properties"
 
 #Create RTF license for msi
 &mvn -B -f $buildDir/../../pom.xml license:add-third-party `
@@ -109,6 +119,7 @@ if ($clean -and (Test-Path -Path $appPath)) {
 # patch app dir
 Copy-Item "contrib\*" -Destination "$AppName"
 attrib -r "$AppName\$AppName.exe"
+attrib -r "$AppName\${AppName}Debug.exe"
 # patch batch script to set hostfile
 $webDAVPatcher = "$AppName\patchWebDAV.bat"
 try {
