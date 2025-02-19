@@ -80,6 +80,7 @@ public class GeneralPreferencesController implements FxController {
 		Bindings.bindBidirectional(settings.keychainProvider, keychainBackendChoiceBox.valueProperty(), keychainSettingsConverter);
 		useKeychainCheckbox.selectedProperty().bindBidirectional(settings.useKeychain);
 		keychainBackendChoiceBox.disableProperty().bind(useKeychainCheckbox.selectedProperty().not());
+		keychainBackendChoiceBox.valueProperty().addListener(this::migrateKeychainEntriesOnMac);
 
 		useQuickAccessCheckbox.selectedProperty().bindBidirectional(settings.useQuickAccess);
 		var quickAccessSettingsConverter = new ServiceToSettingsConverter<>(quickAccessServices);
@@ -88,6 +89,32 @@ public class GeneralPreferencesController implements FxController {
 		quickAccessServiceChoiceBox.setConverter(new NamedServiceConverter<>());
 		Bindings.bindBidirectional(settings.quickAccessService, quickAccessServiceChoiceBox.valueProperty(), quickAccessSettingsConverter);
 		quickAccessServiceChoiceBox.disableProperty().bind(useQuickAccessCheckbox.selectedProperty().not());
+	}
+
+	public void migrateKeychainEntriesOnMac(Observable observable, KeychainAccessProvider oldProvider, KeychainAccessProvider newProvider) {
+		if (!SystemUtils.IS_OS_MAC) {
+			return;
+		}
+
+		var systemKeychainID = "org.cryptomator.macos.keychain.MacSystemKeychainAccess";
+		var isSystemKeychain = newProvider.getClass().getName().equals(systemKeychainID);
+
+		List<String> vaultIds = settings.directories.stream().map(vault -> vault.id).toList();
+
+		if (!vaultIds.isEmpty()) {
+			LOG.info("Migrating keychain entries for vaultIds: {}", vaultIds);
+		}
+		for (String vaultId : vaultIds) {
+			try {
+				if (keychain.isPassphraseStored(vaultId)) {
+					var passphrase = keychain.loadPassphrase(vaultId);
+					keychain.deletePassphrase(vaultId);
+					keychain.storePassphrase(vaultId, vaultId, new Passphrase(passphrase), !isSystemKeychain);
+				}
+			} catch (KeychainAccessException e) {
+				LOG.error("Failed to migrate keychain entry for vault {}.", vaultId, e);
+			}
+		}
 	}
 
 	public boolean isAutoStartSupported() {
